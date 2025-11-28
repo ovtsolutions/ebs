@@ -20,10 +20,14 @@ OpenStack Cinder volume fault-tolerant driver based on LVM
 - Compatibility with Python 3
 
 # Driver installation
+
+Get source code:
+```
+git clone https://gitlab.com/ovtsolutions/ebs.git 
+```
+
 ```
 sudo apt install lvm2 targetcli-fb python3-rtslib-fb drbd-utils -y
-
-git clone https://github.com/dagavrilov/ebs.git ebs 
 sudo cp ebs/etc/cinder/rootwrap.d/ebs.filters /etc/cinder/rootwrap.d/
 sudo cp -r ebs/cinder/volume/drivers/ovt /usr/lib/python3/dist-packages/cinder/volume/drivers/
 ```
