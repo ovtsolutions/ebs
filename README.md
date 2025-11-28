@@ -19,18 +19,21 @@
 - Совместимость с Python 3.9 и 3.11
 
 ## Установка драйвера 
+Забираем код:
+
+```
+git clone https://gitlab.com/ovtsolutions/ebs.git 
+
+```
+
 HCI ОТВ эв3
 ```
-git clone https://gitlab.ev3cloud.ru/ovt-public/fault-tolerant-block-storage.git ebs
-
 sudo cp ebs/etc/cinder/rootwrap.d/ebs.filters  /opt/hci/etc/cinder/rootwrap.d/
 sudo cp -r ebs/cinder/volume/drivers/ovt /opt/hci/lib/python3.11/dist-packages/cinder/volume/drivers/
 ```
 
 Debian/Ubuntu
 ```
-git clone https://gitlab.ev3cloud.ru/ovt-public/fault-tolerant-block-storage.git ebs
-
 sudo apt install lvm2 targetcli-fb python3-rtslib-fb drbd-utils -y
 
 sudo cp ebs/etc/cinder/rootwrap.d/ebs.filters /etc/cinder/rootwrap.d/
@@ -38,8 +41,6 @@ sudo cp -r ebs/cinder/volume/drivers/ovt /usr/lib/python3/dist-packages/cinder/v
 ```
 РЕД ОС 8.0
 ```
-git clone https://gitlab.ev3cloud.ru/ovt-public/fault-tolerant-block-storage.git ebs
-
 sudo dnf lvm2 targetcli-fb python3-rtslib-fb drbd-utils
 
 sudo cp ebs/etc/cinder/rootwrap.d/ebs.filters /etc/cinder/rootwrap.d/
