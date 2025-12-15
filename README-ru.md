@@ -23,50 +23,55 @@
 ## Установка драйвера 
 HCI ОТВ эв3
 ```
-git clone https://gitlab.ev3cloud.ru/ovt-public/fault-tolerant-block-storage.git ebs
 
-sudo cp ebs/etc/cinder/rootwrap.d/ebs.filters  /opt/hci/etc/cinder/rootwrap.d/
-sudo cp -r ebs/cinder/volume/drivers/ovt /opt/hci/lib/python3.11/dist-packages/cinder/volume/drivers/
+git clone https://github.com/ovtsolutions/ev3.git
+
+sudo cp ev3/etc/cinder/rootwrap.d/ev3.filters  /opt/hci/etc/cinder/rootwrap.d/
+sudo cp -r ev3/cinder/volume/drivers/ovt /opt/hci/lib/python3.11/dist-packages/cinder/volume/drivers/
 ```
 
 Debian/Ubuntu
 ```
-git clone https://gitlab.ev3cloud.ru/ovt-public/fault-tolerant-block-storage.git ebs
+git clone https://github.com/ovtsolutions/ev3.git 
 
 sudo apt install lvm2 targetcli-fb python3-rtslib-fb drbd-utils -y
 
-sudo cp ebs/etc/cinder/rootwrap.d/ebs.filters /etc/cinder/rootwrap.d/
-sudo cp -r ebs/cinder/volume/drivers/ovt /usr/lib/python3/dist-packages/cinder/volume/drivers/
+sudo cp ev3/etc/cinder/rootwrap.d/ev3.filters /etc/cinder/rootwrap.d/
+sudo cp -r ev3/cinder/volume/drivers/ovt /usr/lib/python3/dist-packages/cinder/volume/drivers/
 ```
 РЕД ОС 8.0
 ```
-git clone https://gitlab.ev3cloud.ru/ovt-public/fault-tolerant-block-storage.git ebs
+git clone https://github.com/ovtsolutions/ev3.git 
 
-sudo dnf lvm2 targetcli-fb python3-rtslib-fb drbd-utils
+sudo dnf install lvm2 targetcli-fb python3-rtslib-fb drbd-utils
 
-sudo cp ebs/etc/cinder/rootwrap.d/ebs.filters /etc/cinder/rootwrap.d/
-sudo cp -r ebs/cinder/volume/drivers/ovt /usr/lib/python3/dist-packages/cinder/volume/drivers/
+sudo cp ev3/etc/cinder/rootwrap.d/ev3.filters /etc/cinder/rootwrap.d/
+sudo cp -r ev3/cinder/volume/drivers/ovt /usr/lib/python3/dist-packages/cinder/volume/drivers/
 ```
 
 ## Создание типа блочных устройств Openstack Cinder c поддержкой репликации 
 ```
-openstack volume type create ebs --property volume_backend_name='ebs' --property replication_enabled='<is> True'
+openstack volume type create RBS --property volume_backend_name='ev3' --property replication_enabled='<is> True'
 ```
 
 ## Пример настройки драйвера Openstack Cinder (две копии данных)
 ```
-[EBS]
+[DEFAULT]
+...
+enabled_backends = RBS
+
+[RBS]
 target_helper=lioadm
 target_protocol=iscsi 
 target_ip_address=10.0.251.21
 target_secondary_ip_addresses=10.0.252.21
 
-volume_backend_name=ebs
-volume_driver = cinder.volume.drivers.ovt.ebs.EBSVolumeDriver
+volume_backend_name=ev3
+volume_driver = cinder.volume.drivers.ovt.ev3.ReplicatedVolumeDriver
 volume_group=volumes
 
 # storage backend id
-backend_id=hci-0001@EBS
+backend_id=hci-0001@RBS
 # storage API address
 backend_ip=10.0.10.21
 # storage API port
@@ -84,11 +89,11 @@ replication_mode = full-sync
 
 #replication_resync_rate = 100
 #replication_starting_port = 7001
-replication_device = backend_id:hci-0002@EBS,ip:10.0.10.22,port:7000,volume_group:volumes
+replication_device = backend_id:hci-0002@RBS,ip:10.0.10.22,port:7000,volume_group:volumes
 ```
 
 ### Использование
-Формирование политики отказоустойчивости. Резервные хост cinder-volume (в примере hci-0002@EBS) будет отключен и помечен как failed-over, а тома на нём остаются доступными:
+Формирование политики отказоустойчивости. Резервные хост cinder-volume (в примере hci-0002@RBS) будет отключен и помечен как failed-over, а тома на нём остаются доступными:
 ```
 openstack volume service list --long
 +------------------+--------------+------+---------+-------+----------------------------+---------------------------------------------------------------+
@@ -96,11 +101,11 @@ openstack volume service list --long
 +------------------+--------------+------+---------+-------+----------------------------+---------------------------------------------------------------+
 | cinder-scheduler | hci-0001     | AZ01 | enabled | up    | 2025-11-18T12:41:31.000000 | None                                                          |
 | cinder-scheduler | hci-0002     | AZ01 | enabled | up    | 2025-11-18T12:41:33.000000 | None                                                          |
-| cinder-volume    | hci-0001@EBS | AZ01 | enabled | up    | 2025-11-18T12:41:27.000000 | None                                                          |
-| cinder-volume    | hci-0002@EBS | AZ01 | enabled | up    | 2025-11-18T12:41:25.000000 | None                                                          |
+| cinder-volume    | hci-0001@RBS | AZ01 | enabled | up    | 2025-11-18T12:41:27.000000 | None                                                          |
+| cinder-volume    | hci-0002@RBS | AZ01 | enabled | up    | 2025-11-18T12:41:25.000000 | None                                                          |
 +------------------+--------------+------+---------+-------+----------------------------+---------------------------------------------------------------+
 
-cinder failover-host hci-0002@EBS --backend_id hci-0001@EBS
+cinder failover-host hci-0002@RBS --backend_id hci-0001@RBS
 
 openstack volume service list --long
 +------------------+--------------+------+----------+-------+----------------------------+---------------------------------------------------------------+
@@ -108,8 +113,8 @@ openstack volume service list --long
 +------------------+--------------+------+----------+-------+----------------------------+---------------------------------------------------------------+
 | cinder-scheduler | hci-0001     | AZ01 | enabled  | up    | 2025-11-18T12:42:51.000000 | None                                                          |
 | cinder-scheduler | hci-0002     | AZ01 | enabled  | up    | 2025-11-18T12:42:53.000000 | None                                                          |
-| cinder-volume    | hci-0001@EBS | AZ01 | enabled  | up    | 2025-11-18T12:42:28.000000 |                                                               |
-| cinder-volume    | hci-0002@EBS | AZ01 | disabled | up    | 2025-11-18T12:42:24.000000 | failed-over                                                   |
+| cinder-volume    | hci-0001@RBS | AZ01 | enabled  | up    | 2025-11-18T12:42:28.000000 |                                                               |
+| cinder-volume    | hci-0002@RBS | AZ01 | disabled | up    | 2025-11-18T12:42:24.000000 | failed-over                                                   |
 +------------------+--------------+------+----------+-------+----------------------------+---------------------------------------------------------------+
 ```
 Создание реплицируемого блочного устройства.
@@ -118,11 +123,11 @@ openstack volume type list
 +--------------------------------------+-------------+-----------+
 | ID                                   | Name        | Is Public |
 +--------------------------------------+-------------+-----------+
-| 387e6744-52ba-441b-8848-969ff8541885 | EBS         | True      |
+| 387e6744-52ba-441b-8848-969ff8541885 | RBS         | True      |
 | 03dffb4d-58bc-438b-84ed-a57c93e6d177 | __DEFAULT__ | False     |
 +--------------------------------------+-------------+-----------+
 
-openstack volume create --type EBS --size 10 replicated
+openstack volume create --type RBS --size 10 replicated
 +---------------------+--------------------------------------+
 | Field               | Value                                |
 +---------------------+--------------------------------------+
@@ -145,7 +150,7 @@ openstack volume create --type EBS --size 10 replicated
 | snapshot_id         | None                                 |
 | source_volid        | None                                 |
 | status              | creating                             |
-| type                | EBS                                  |
+| type                | RBS                                  |
 | updated_at          | None                                 |
 | user_id             | 993d0e88b013438fb2b8ce6e4e77459b     |
 +---------------------+--------------------------------------+
@@ -166,7 +171,7 @@ openstack volume show caaa7f09-c8ca-4dc9-9205-2bbaed378482
 | migration_status               | None                                 |
 | multiattach                    | False                                |
 | name                           | replicated                           |
-| os-vol-host-attr:host          | hci-0001@EBS#ebs                     |
+| os-vol-host-attr:host          | hci-0001@RBS#ev3                     |
 | os-vol-mig-status-attr:migstat | None                                 |
 | os-vol-mig-status-attr:name_id | None                                 |
 | os-vol-tenant-attr:tenant_id   | db06b1a84e6544aabe74683fe87b084a     |
@@ -177,7 +182,7 @@ openstack volume show caaa7f09-c8ca-4dc9-9205-2bbaed378482
 | snapshot_id                    | None                                 |
 | source_volid                   | None                                 |
 | status                         | available                            |
-| type                           | ebs                                  |
+| type                           | RBS                                  |
 | updated_at                     | 2025-11-18T12:49:41.000000           |
 | user_id                        | 993d0e88b013438fb2b8ce6e4e77459b     |
 +--------------------------------+--------------------------------------+
@@ -191,14 +196,14 @@ openstack volume service list --long
 +------------------+--------------+------+----------+-------+----------------------------+---------------------------------------------------------------+
 | cinder-scheduler | hci-0001     | AZ01 | enabled  | up    | 2025-11-18T12:45:31.000000 | None                                                          |
 | cinder-scheduler | hci-0002     | AZ01 | enabled  | up    | 2025-11-18T12:45:33.000000 | None                                                          |
-| cinder-volume    | hci-0001@EBS | AZ01 | enabled  | down  | 2025-11-18T12:45:27.000000 |                                                               |
-| cinder-volume    | hci-0002@EBS | AZ01 | disabled | up    | 2025-11-18T12:45:24.000000 | failed-over                                                   |
+| cinder-volume    | hci-0001@RBS | AZ01 | enabled  | down  | 2025-11-18T12:45:27.000000 |                                                               |
+| cinder-volume    | hci-0002@RBS | AZ01 | disabled | up    | 2025-11-18T12:45:24.000000 | failed-over                                                   |
 +------------------+--------------+------+----------+-------+----------------------------+---------------------------------------------------------------+
 
-cinder failover-host hci-0002@EBS --backend_id default
-cinder freeze-host hci-0002@EBS
+cinder failover-host hci-0002@RBS --backend_id default
+cinder freeze-host hci-0002@RBS
 
-cinder-manage volume update_host --currenthost hci-0001@EBS#ebs --newhost hci-0002@EBS#ebs
+cinder-manage volume update_host --currenthost hci-0001@RBS#ev3 --newhost hci-0002@RBS#ev3
 
 openstack volume service list --long
 +------------------+--------------+------+----------+-------+----------------------------+---------------------------------------------------------------+
@@ -206,8 +211,8 @@ openstack volume service list --long
 +------------------+--------------+------+----------+-------+----------------------------+---------------------------------------------------------------+
 | cinder-scheduler | hci-0001     | AZ01 | enabled  | up    | 2025-11-18T12:46:22.000000 | None                                                          |
 | cinder-scheduler | hci-0002     | AZ01 | enabled  | up    | 2025-11-18T12:46:34.000000 | None                                                          |
-| cinder-volume    | hci-0001@EBS | AZ01 | enabled  | down  | 2025-11-18T12:46:37.000000 |                                                               |
-| cinder-volume    | hci-0002@EBS | AZ01 | disabled | up    | 2025-11-18T12:46:34.000000 | frozen                                                        |
+| cinder-volume    | hci-0001@RBS | AZ01 | enabled  | down  | 2025-11-18T12:46:37.000000 |                                                               |
+| cinder-volume    | hci-0002@RBS | AZ01 | disabled | up    | 2025-11-18T12:46:34.000000 | frozen                                                        |
 +------------------+--------------+------+----------+-------+----------------------------+---------------------------------------------------------------+
 ```
 
@@ -229,7 +234,7 @@ openstack volume show caaa7f09-c8ca-4dc9-9205-2bbaed378482
 | migration_status               | None                                 |
 | multiattach                    | False                                |
 | name                           | replicated                           |
-| os-vol-host-attr:host          | hci-0002@EBS#ebs                     |
+| os-vol-host-attr:host          | hci-0002@RBS#ev3                     |
 | os-vol-mig-status-attr:migstat | None                                 |
 | os-vol-mig-status-attr:name_id | None                                 |
 | os-vol-tenant-attr:tenant_id   | db06b1a84e6544aabe74683fe87b084a     |
@@ -240,7 +245,7 @@ openstack volume show caaa7f09-c8ca-4dc9-9205-2bbaed378482
 | snapshot_id                    | None                                 |
 | source_volid                   | None                                 |
 | status                         | available                            |
-| type                           | ebs                                  |
+| type                           | RBS                                  |
 | updated_at                     | 2025-11-18T12:49:41.000000           |
 | user_id                        | 993d0e88b013438fb2b8ce6e4e77459b     |
 +--------------------------------+--------------------------------------+
@@ -253,11 +258,11 @@ openstack volume service list --long
 +------------------+--------------+------+----------+-------+----------------------------+---------------------------------------------------------------+
 | cinder-scheduler | hci-0001     | AZ01 | enabled  | up    | 2025-11-18T12:47:18.000000 | None                                                          |
 | cinder-scheduler | hci-0002     | AZ01 | enabled  | up    | 2025-11-18T12:47:23.000000 | None                                                          |
-| cinder-volume    | hci-0001@EBS | AZ01 | enabled  | up    | 2025-11-18T12:47:31.000000 |                                                               |
-| cinder-volume    | hci-0002@EBS | AZ01 | disabled | up    | 2025-11-18T12:47:23.000000 | frozen                                                        |
+| cinder-volume    | hci-0001@RBS | AZ01 | enabled  | up    | 2025-11-18T12:47:31.000000 |                                                               |
+| cinder-volume    | hci-0002@RBS | AZ01 | disabled | up    | 2025-11-18T12:47:23.000000 | frozen                                                        |
 +------------------+--------------+------+----------+-------+----------------------------+---------------------------------------------------------------+
-cinder thaw-host hci-0002@EBS
-cinder failover-host hci-0001@EBS --backend_id hci-0002@EBS
+cinder thaw-host hci-0002@RBS
+cinder failover-host hci-0001@RBS --backend_id hci-0002@RBS
 
 openstack volume service list --long
 +------------------+--------------+------+----------+-------+----------------------------+---------------------------------------------------------------+
@@ -265,8 +270,8 @@ openstack volume service list --long
 +------------------+--------------+------+----------+-------+----------------------------+---------------------------------------------------------------+
 | cinder-scheduler | hci-0001     | AZ01 | enabled  | up    | 2025-11-18T12:47:48.000000 | None                                                          |
 | cinder-scheduler | hci-0002     | AZ01 | enabled  | up    | 2025-11-18T12:47:53.000000 | None                                                          |
-| cinder-volume    | hci-0001@EBS | AZ01 | disabled | up    | 2025-11-18T12:47:54.000000 | failed-over                                                   |
-| cinder-volume    | hci-0002@EBS | AZ01 | enabled  | up    | 2025-11-18T12:47:55.000000 |                                                               |
+| cinder-volume    | hci-0001@RBS | AZ01 | disabled | up    | 2025-11-18T12:47:54.000000 | failed-over                                                   |
+| cinder-volume    | hci-0002@RBS | AZ01 | enabled  | up    | 2025-11-18T12:47:55.000000 |                                                               |
 +------------------+--------------+------+----------+-------+----------------------------+---------------------------------------------------------------+
 ```
 ## Лицензия
