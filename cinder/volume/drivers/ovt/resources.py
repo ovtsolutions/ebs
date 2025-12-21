@@ -10,3 +10,5 @@ BACKEND = \
     floating {address}:{port} {{
         disk    {disk};
     }}"""
+HTTP_HEADER_X_EV3_DATE='x-ev3-date'
+HTTP_HEADER_X_EV3_TOKEN='x-ev3-token'

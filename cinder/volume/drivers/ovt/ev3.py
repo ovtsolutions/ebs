@@ -26,6 +26,8 @@ import json
 import fnmatch
 import requests
 import datetime
+import hmac
+import hashlib
 
 from oslo_concurrency import processutils
 from oslo_config import cfg
@@ -42,7 +44,8 @@ from cinder.volume.drivers.lvm import LVMVolumeDriver
 from webob import Request, Response
 from wsgiref.simple_server import make_server
 
-from cinder.volume.drivers.ovt.resources import (BACKEND, RESOURCE_CONF, REPLICATION_PROTOCOLS)
+
+import cinder.volume.drivers.ovt.resources as ev3_res
 
 LOG = logging.getLogger(__name__)
 
@@ -544,15 +547,15 @@ class ReplicatedVolumeDriver(LVMVolumeDriver):
         :return: None
         """
         res_id = resource.get('volume_id')
-        protocol = REPLICATION_PROTOCOLS[resource.get('replication_mode')]
+        protocol = ev3_res.REPLICATION_PROTOCOLS[resource.get('replication_mode')]
         minor = resource.get('device_minor')
         port = resource.get('replication_port')
 
         backends = ''
         for b in resource.get('backends'):
-            backends += BACKEND.format(address=b.get('ip'), port=port, disk=b.get('volume'))
+            backends += ev3_res.BACKEND.format(address=b.get('ip'), port=port, disk=b.get('volume'))
 
-        config = RESOURCE_CONF.format(resource_id=res_id, protocol=protocol, backends=backends, minor=minor).lstrip()
+        config = ev3_res.RESOURCE_CONF.format(resource_id=res_id, protocol=protocol, backends=backends, minor=minor).lstrip()
 
         try:
             self.__write_drbd_config(res_id, config)
@@ -757,7 +760,12 @@ class ReplicatedVolumeDriver(LVMVolumeDriver):
         """
         if data is None:
             data = {}
-        headers = {'X-Auth-Token': self.configuration.replication_internal_secret}
+
+        now_utc = datetime.datetime.now().isoformat() + 'Z'
+        secret_key = f"EV3{self.configuration.replication_internal_secret}".encode('utf-8')
+        hmac_digest = hmac.new(secret_key, now_utc.encode('utf-8'), hashlib.sha256)
+        headers = {ev3_res.HTTP_HEADER_X_EV3_TOKEN: hmac_digest.hexdigest(), ev3_res.HTTP_HEADER_X_EV3_DATE: now_utc }
+
         try:
             with requests.post(url=f"{endpoint}{api_method}", headers=headers, json=data) as resp:
                 if resp.status_code == 200:
@@ -776,6 +784,22 @@ class ReplicatedVolumeDriver(LVMVolumeDriver):
         """
         req = Request(environ)
         resp = Response()
+
+        # begin block: token check
+        ev3_date = req.headers.get(ev3_res.HTTP_HEADER_X_EV3_DATE)
+        token = req.headers.get(ev3_res.HTTP_HEADER_X_EV3_TOKEN)
+
+        if ev3_date is None or token is None:
+            resp.status_code = 403
+            return resp(environ, start_response)
+
+        secret_key = f"EV3{self.configuration.replication_internal_secret}".encode('utf-8')
+        hmac_digest = hmac.new(secret_key, ev3_date.encode('utf-8'), hashlib.sha256)
+        if token != hmac_digest.hexdigest():
+            resp.status_code = 403
+            resp(environ, start_response)
+        # end block: token check
+
         try:
             if req.method == 'GET' and req.path == '/heartbeat':
                 resp.status_code = 200
