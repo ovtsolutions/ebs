@@ -14,7 +14,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import datetime
 import hmac
 import hashlib
 import json
@@ -23,6 +22,7 @@ import urllib.parse
 from abc import abstractmethod
 from oslo_concurrency import lockutils
 from webob import Request
+from datetime import datetime, timezone
 
 SCHEME = 'AWS4'
 SIGNATURE_ALGORITHM = 'HMAC-SHA256'
@@ -31,11 +31,9 @@ HTTP_HEADER_X_AMZ_CONTENT_SHA256 = 'x-amz-content-sha256'
 
 UTF_8_ENCODING = 'utf-8'
 DATE_STAMP_FORMAT = "%Y%m%d"
+X_AMZ_DATE_FORMAT = '%Y%m%dT%H%M%SZ'
 
 class AbstractSignerForAuthorizationHeader:
-    """
-     Implementation of the AWS4 algorithm for signing requests to ev3.Storage using the 'Authorization' header.
-    """
     def __init__(self, scheme:str, region_name:str, service_name:str, terminator:str):
         self.scheme:str = scheme
         self.region_name:str = region_name
@@ -56,12 +54,13 @@ class AbstractSignerForAuthorizationHeader:
         if access_key is None or not access_key:
             access_key = self.hash('')
 
-        time_stamp = datetime.datetime.now()
+        time_stamp = datetime.now(timezone.utc)
         date_stamp = time_stamp.strftime(DATE_STAMP_FORMAT)
 
         secret = self.scheme + self.get_secret_key(access_key)
         scope = access_key + "/" + date_stamp + "/" + self.region_name + "/" + self.service_name + "/" + self.terminator
-        headers[HTTP_HEADER_X_AMZ_DATE] = time_stamp.isoformat() + 'Z'
+        headers[HTTP_HEADER_X_AMZ_DATE] = time_stamp.strftime(X_AMZ_DATE_FORMAT)
+
         headers[HTTP_HEADER_X_AMZ_CONTENT_SHA256] = self.hash(body_content)
 
         canonicalized_header_names = self.__canonicalized_header_names(headers)
@@ -74,9 +73,9 @@ class AbstractSignerForAuthorizationHeader:
             canonicalized_headers=canonicalized_headers,
             body_hash=self.hash(body_content))
 
-        string_to_sign = self.__get_string_to_sign(self.scheme, SIGNATURE_ALGORITHM, time_stamp.isoformat() + 'Z', scope, canonical_request)
+        string_to_sign = self.__get_string_to_sign(self.scheme, SIGNATURE_ALGORITHM, headers[HTTP_HEADER_X_AMZ_DATE], scope, canonical_request)
 
-        date_key = hmac.new(secret.encode(UTF_8_ENCODING), (time_stamp.isoformat() + 'Z').encode(UTF_8_ENCODING), hashlib.sha256).hexdigest()
+        date_key = hmac.new(secret.encode(UTF_8_ENCODING), headers[HTTP_HEADER_X_AMZ_DATE].encode(UTF_8_ENCODING), hashlib.sha256).hexdigest()
         date_region_key = hmac.new(date_key.encode(UTF_8_ENCODING), self.region_name.encode(UTF_8_ENCODING), hashlib.sha256).hexdigest()
         date_region_service_key = hmac.new(date_region_key.encode(UTF_8_ENCODING), self.region_name.encode(UTF_8_ENCODING), hashlib.sha256).hexdigest()
         signing_key = hmac.new(date_region_service_key.encode(UTF_8_ENCODING), self.terminator.encode(UTF_8_ENCODING), hashlib.sha256).hexdigest()
@@ -92,13 +91,15 @@ class AbstractSignerForAuthorizationHeader:
 
         headers['Authorization'] = authorization
 
+        return headers
+
     def verify_by_request(self, req:Request) -> int:
         headers = {}
         for header, value in req.headers.items():
             if header.lower().startswith("x-"):
-              headers[header.strip().lower()] = value
-            else:
-              headers[header.strip()] = value
+                headers[header.strip().lower()] = value
+        else:
+            headers[header.strip()] = value
 
         return self.verify(
             method=req.method,
@@ -120,7 +121,15 @@ class AbstractSignerForAuthorizationHeader:
         if ('Authorization' or HTTP_HEADER_X_AMZ_DATE or HTTP_HEADER_X_AMZ_CONTENT_SHA256) not in headers:
             return 401
 
-        time_stamp =  headers[HTTP_HEADER_X_AMZ_DATE]
+        client_dt_str =  headers[HTTP_HEADER_X_AMZ_DATE]
+        server_dt_str = datetime.now(timezone.utc).strftime(X_AMZ_DATE_FORMAT)
+
+        client_ts = datetime.strptime(client_dt_str, X_AMZ_DATE_FORMAT).timestamp()
+        server_ts = datetime.strptime(server_dt_str, X_AMZ_DATE_FORMAT).timestamp()
+
+        if server_ts > (client_ts + (5 * 60)) or server_ts < client_ts:
+            return 403
+
         auth_params = headers['Authorization'].split(",")
         scope = None
         client_signature= None
@@ -147,9 +156,9 @@ class AbstractSignerForAuthorizationHeader:
             headers=headers
         )
 
-        string_to_sign = self.__get_string_to_sign(self.scheme, SIGNATURE_ALGORITHM, time_stamp, scope, canonical_request)
+        string_to_sign = self.__get_string_to_sign(self.scheme, SIGNATURE_ALGORITHM, client_dt_str, scope, canonical_request)
 
-        date_key = hmac.new(secret.encode(UTF_8_ENCODING), time_stamp.encode(UTF_8_ENCODING), hashlib.sha256).hexdigest()
+        date_key = hmac.new(secret.encode(UTF_8_ENCODING), client_dt_str.encode(UTF_8_ENCODING), hashlib.sha256).hexdigest()
         date_region_key = hmac.new(date_key.encode(UTF_8_ENCODING), self.region_name.encode(UTF_8_ENCODING), hashlib.sha256).hexdigest()
         date_region_service_key = hmac.new(date_region_key.encode(UTF_8_ENCODING), self.region_name.encode(UTF_8_ENCODING), hashlib.sha256).hexdigest()
         signing_key = hmac.new(date_region_service_key.encode(UTF_8_ENCODING), self.terminator.encode(UTF_8_ENCODING), hashlib.sha256).hexdigest()
