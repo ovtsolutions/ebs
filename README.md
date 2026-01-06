@@ -1,4 +1,4 @@
-# OpenStack Cinder replicated volume driver based on LVM and DRBD
+# OpenStack Cinder replicated volume driver
 
 This driver utilizes Openstack Cinder Replication API to ensure high availability and rapid recovery of Cinder volumes in the event of a failure. Openstack Cinder Replication provides synchronous, nea  synchronous or assynchronous data replication between the source and replicated volumes, guaranteeing data integrity and minimal recovery time. Crucially, this allows you to leverage the driver for applications requiring low-latency block storage, potentially replacing Ceph where minimal latency is paramount. For detailed information on configuring and using Openstack Cinder Replication, please refer to the official OpenStack documentation: https://docs.openstack.org/cinder/latest/contributor/replication.html
 
